@@ -47,36 +47,56 @@ namespace Messenger
                 Console.WriteLine("Что-то пошло не так...");
                 Console.WriteLine(e.Message);
             }
+            finally
+            {
+                Close();
+                Console.WriteLine("Соединение завершено.");
+                Console.ReadLine();
+            }
         }
 
         public static void MessageSender()
         {
-            while (true)
+            try
             {
-                // Читаем с консоли сообщение
-                var msg = Console.ReadLine();
-                byte[] bytesMsg = Encoding.Unicode.GetBytes(msg);
-                // Отправляем его в виде байтов
-                userSocket.Send(bytesMsg);
+                while (true)
+                {
+                    // Читаем с консоли сообщение
+                    var msg = Console.ReadLine();
+                    byte[] bytesMsg = Encoding.Unicode.GetBytes(msg);
+                    // Отправляем его в виде байтов
+                    userSocket.Send(bytesMsg);
+                }
+            }
+            catch (Exception e)
+            {
+                return;
             }
         }
 
         public static void MessageReceiver()
         {
-            while (true)
+            try
             {
-                // Ресивим сообщения, если ресивятся
-                StringBuilder receivedMsg = new StringBuilder();
-                byte[] data = new byte[256]; // буфер для получаемых данных
-
-                do
+                while (true)
                 {
-                    int bytes = userSocket.Receive(data);
-                    receivedMsg.Append(Encoding.Unicode.GetString(data, 0, bytes));
-                }
-                while (userSocket.Available > 0);
+                    // Ресивим сообщения, если ресивятся
+                    StringBuilder receivedMsg = new StringBuilder();
+                    byte[] data = new byte[256]; // буфер для получаемых данных
 
-                Console.WriteLine(receivedMsg.ToString());
+                    do
+                    {
+                        int bytes = userSocket.Receive(data);
+                        receivedMsg.Append(Encoding.Unicode.GetString(data, 0, bytes));
+                    }
+                    while (userSocket.Available > 0);
+
+                    Console.WriteLine(receivedMsg.ToString());
+                }
+            }
+            catch (Exception e)
+            {
+                return;
             }
         }
 
