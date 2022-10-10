@@ -27,6 +27,7 @@ namespace Messenger
             _socket = socket;
             _server = server;
 
+            // Получаем от сервера имя
             Name = GetMessage();
         }
 
@@ -37,23 +38,28 @@ namespace Messenger
 
             do
             {
+                // Считываем первую пачку данных до 256 символов
                 int bytes = _socket.Receive(data);
+                // Переводим пачку байт в юникод строку
                 receivedMsg.Append(Encoding.Unicode.GetString(data, 0, bytes));
             }
             while (_socket.Available > 0);
-
+            // Возвращаем полученную строку
             return receivedMsg.ToString();
         }
 
         public void SendMessage(string msg)
         {
+            // Преобразуем сообщение в поток байтов и отправляем его клиенту
             byte[] bytesMsg = Encoding.Unicode.GetBytes(msg);
             _socket.Send(bytesMsg);
         }
 
         public void Close()
         {
+            // Закрываем соединение сокета связи с клиентом для двух сторон
             _socket.Shutdown(SocketShutdown.Both);
+            // Закрываем сокет
             _socket.Close();
         }
 
@@ -61,9 +67,12 @@ namespace Messenger
         {
             try
             {
+                // Пока сокет не закончил соединение (мягко, не аварийно)
                 while (_socket.Connected)
                 {
+                    // Получаем сообщение с процесса
                     var msg = GetMessage();
+                    // Если оно есть, то броадкастим его всем клиентам
                     if (msg != "")
                     {
                         _server.AddMessageToBroadcast(msg, ID);
@@ -72,10 +81,12 @@ namespace Messenger
             }
             catch (Exception e)
             {
-
+                // В случае возникновения ошибки чтения данных (например, клиент завершился аварийно),
+                // просто делаем дисконнект клиента
             }
             finally
             {
+                // Удаляем соединение клиента из сервера
                 _server.RemoveClient(ID);
             }
         }
@@ -92,22 +103,29 @@ namespace Messenger
 
         private ConcurrentQueue<Tuple<string, string>> _msgsQueue = new();
 
-        public Server(int port = 2004, string ip = "127.0.0.25")
+        public Server(string ip = "192.168.2.103", int port = 2004)
         {
             Port = port;
             Ip = IPAddress.Parse(ip);
 
+            // Инициируем сокет сервера, который будет заниматься прослушиванием входящих сообщений
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+
+            // Указываем ip:port конечной точки сокета (сервера)
             IPEndPoint ipPoint = new(Ip, Port);
+            // Биндим сокет с конечной точкой (привязываем сокет к серверу)
             _socket.Bind(ipPoint);
         }
 
+        // Функция прослушивания канала и подключение новых соединений
         public void Listen()
         {
+            // Открываем сокет на прослушивание, задаем размер стека очереди на подключение в 100 юзеров
             _socket.Listen(100);
             Console.WriteLine("Сервер запущен. Ожидание подключений...");
             try
             {
+                // В вечном цикле ожидаем новые запросы на подключение и соответственно добавляем их в работу сервера
                 while (true)
                 {
                     var client = _socket.Accept();
@@ -126,20 +144,25 @@ namespace Messenger
 
         public void AddMessageToBroadcast(string msg, string senderId)
         {
+            // Добавляем сообщение в потокобезопасную очередь
             _msgsQueue.Enqueue(Tuple.Create(msg, senderId));
+            // Вызываем вывод сообщений
             BroadcastMessages();
         }
 
         private void BroadcastMessages()
         {
-            if (_msgsQueue.TryDequeue(out var elem))
+            // Пока элементы извлекаются из очереди
+            while (_msgsQueue.TryDequeue(out var elem))
             {
                 var ID = elem.Item2;
                 var msg = elem.Item1;
 
+                // Находим отправителя, чтобы найти его имя
                 var sender = _clients.FirstOrDefault(e => e.ID == ID);
                 var str = $"{sender.Name}: {msg}";
 
+                // Для всех клиентов, кроме отправителя, выводим месседж
                 foreach (Client client in _clients)
                 {
                     if (client.ID != ID)
@@ -147,51 +170,48 @@ namespace Messenger
                         client.SendMessage(str);
                     }
                 }
+                // Дублируем месседж на сервер
                 Console.WriteLine(str);
             }
         }
-        //public void BroadcastMessage(string message, string clientId)
-        //{
-        //    var sender = _clients.FirstOrDefault(e => e.ID == clientId);
-        //    var mgs = $"{sender.Name}: {message}";
-
-        //    foreach (Client client in _clients)
-        //    {
-        //        if (client.ID != clientId)
-        //        {
-        //            client.SendMessage(mgs);
-        //        }
-        //    }
-        //    Console.WriteLine(mgs);
-        //}
 
         public void ConnectClient(Socket clientSocket)
         {
+            // Создаём обёртку для подключаемого клиента
             var client = new Client(clientSocket, this);
+            // Добавляем клиента в список клиентов сервера
             _clients.Add(client);
+            // Выводим в чаты месседж о том, что пользователь подключен
             AddMessageToBroadcast($"Пользователь {client.Name} ({client.Ip}) присоединяется к чату.", client.ID);
 
+            // Начинаем процесс работы с клиентом в отдельном потоке
             new Thread(new ThreadStart(client.Process)).Start();
         }
 
         public void RemoveClient(string clientID)
         {
+            // Находим клиента по его айди
             var client = _clients.FirstOrDefault(e => e.ID == clientID);
             if (client != null)
-            {
+            {   
+                // Броадкастим месседж о выходе юзера
                 AddMessageToBroadcast($"Пользователь {client.Name} ({client.Ip}) покидает чат.", client.ID);
+                // Удаляем клиента с сервера
                 _clients.Remove(client);
+                // Закрываем сокет
                 client.Close();
             }
         }
 
         public void Disconnect()
         {
-            _socket.Close();
             foreach (var client in _clients)
             {
+                // Закрываем всех клиентов
                 RemoveClient(client.ID);
             }
+            // Закрываем сокет сервера
+            _socket.Close();
         }
     }
 
@@ -199,9 +219,13 @@ namespace Messenger
     {
         public static async Task Main()
         {
+            Console.Write("Введите IP адрес для сервера: ");
+            var serverIp = Console.ReadLine()!;
             try
             {
-                var server = new Server();
+                // Инициируем инстанс сервера
+                var server = new Server(serverIp);
+                // Запускаем в новом потоке службу прослушивания событий сервера
                 await Task.Run(() => server.Listen());
             }
             catch (Exception e)

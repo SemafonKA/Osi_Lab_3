@@ -6,11 +6,19 @@ namespace Messenger
 {
     public class Program
     {
-        public static string serverIP = "127.0.0.25";
+        public static string serverIP = "192.168.2.103";
         public static int serverPort = 2004;
         public static Socket userSocket;
         public static async Task Main()
         {
+            Console.Write("Введите IP адрес сервера: ");
+            serverIP = Console.ReadLine()!;
+            Console.Write("Введите порт сервера (2004 по умолчанию): ");
+            if (!int.TryParse(Console.ReadLine(), out serverPort))
+            {
+                serverPort = 2004;
+            }
+
             string name;
             Console.Write("Введите своё имя: ");
             name = Console.ReadLine()!;
