@@ -12,12 +12,18 @@ namespace Messenger
         public string Name { get; private set; }
 
         public string Ip { get => (_socket.RemoteEndPoint as IPEndPoint).Address.ToString(); }
+        public int Port { get => (_socket.RemoteEndPoint as IPEndPoint).Port; }
+
         // Сокет подключенного объекта
         private Socket _socket;
         private Server _server;
 
         // Проверка на то, есть ли в буфере какая-то непрочитанная инфа от объекта
-        public bool HasMessage { get { return _socket.Available > 0; } }
+        public bool HasMessage { get => _socket.Available > 0; }
+        public bool IsConnected
+        {
+            get => !(_socket.Poll(1000, SelectMode.SelectRead) && (_socket.Available == 0) || !_socket.Connected);
+        }
 
         public Client(Socket socket, Server server)
         {
@@ -43,7 +49,7 @@ namespace Messenger
                 // Переводим пачку байт в юникод строку
                 receivedMsg.Append(Encoding.Unicode.GetString(data, 0, bytes));
             }
-            while (_socket.Available > 0);
+            while (this.HasMessage);
             // Возвращаем полученную строку
             return receivedMsg.ToString();
         }
@@ -68,7 +74,7 @@ namespace Messenger
             try
             {
                 // Пока сокет не закончил соединение (мягко, не аварийно)
-                while (_socket.Connected)
+                while (IsConnected)
                 {
                     // Получаем сообщение с процесса
                     var msg = GetMessage();
@@ -122,7 +128,7 @@ namespace Messenger
         {
             // Открываем сокет на прослушивание, задаем размер стека очереди на подключение в 100 юзеров
             _socket.Listen(100);
-            Console.WriteLine("Сервер запущен. Ожидание подключений...");
+            Console.WriteLine("Сервер начинает прослушивание входящих подключений");
             try
             {
                 // В вечном цикле ожидаем новые запросы на подключение и соответственно добавляем их в работу сервера
@@ -182,7 +188,7 @@ namespace Messenger
             // Добавляем клиента в список клиентов сервера
             _clients.Add(client);
             // Выводим в чаты месседж о том, что пользователь подключен
-            AddMessageToBroadcast($"Пользователь {client.Name} ({client.Ip}) присоединяется к чату.", client.ID);
+            AddMessageToBroadcast($"Пользователь {client.Name} ({client.Ip}:{client.Port}) присоединяется к чату.", client.ID);
 
             // Начинаем процесс работы с клиентом в отдельном потоке
             new Thread(new ThreadStart(client.Process)).Start();
@@ -193,9 +199,9 @@ namespace Messenger
             // Находим клиента по его айди
             var client = _clients.FirstOrDefault(e => e.ID == clientID);
             if (client != null)
-            {   
+            {
                 // Броадкастим месседж о выходе юзера
-                AddMessageToBroadcast($"Пользователь {client.Name} ({client.Ip}) покидает чат.", client.ID);
+                AddMessageToBroadcast($"Пользователь {client.Name} ({client.Ip}:{client.Port}) покидает чат.", client.ID);
                 // Удаляем клиента с сервера
                 _clients.Remove(client);
                 // Закрываем сокет
@@ -219,12 +225,23 @@ namespace Messenger
     {
         public static async Task Main()
         {
+            Console.WriteLine("Серверное приложение программы Клиент-Серверный месседжер.");
+            Console.WriteLine("Данная система использует для работы следующие IPv4-адреса:");
+            foreach (IPAddress ip in Dns.GetHostAddresses(Dns.GetHostName(), AddressFamily.InterNetwork))
+            {
+                Console.WriteLine($" - {ip,-16} ({Dns.GetHostEntry(ip).HostName})");
+            }
+
             Console.Write("Введите IP адрес для сервера: ");
             var serverIp = Console.ReadLine()!;
+            Console.Write("Введите порт для сервера: ");
+            var serverPort = Console.ReadLine()!;
             try
             {
                 // Инициируем инстанс сервера
-                var server = new Server(serverIp);
+                var server = new Server(serverIp, int.Parse(serverPort));
+                Console.WriteLine($"Сервер {server.Ip}:{server.Port} успешно запущен.");
+
                 // Запускаем в новом потоке службу прослушивания событий сервера
                 await Task.Run(() => server.Listen());
             }
